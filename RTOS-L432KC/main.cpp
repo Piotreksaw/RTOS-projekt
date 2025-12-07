@@ -4,6 +4,7 @@
 
 
 #include "mbed.h"
+#include "i2c_our.h"
 
 I2C i2c(I2C_SDA, I2C_SCL);
 
