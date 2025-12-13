@@ -1,5 +1,41 @@
-#include "LPS.h"
+#include "LPS25HB.h"
 #include "mbed.h"
+
+/*  SAMPLE CODE
+
+#include "mbed.h"
+#include "LPS25HB.H"
+
+I2C i2c(I2C_SDA, I2C_SCL);
+LPS25HB ps(i2c);
+
+int main(){
+    ThisThread::sleep_for(100ms);
+    if (!ps.init()){
+        printf("Failed to autodetect pressure sensor!\r\n");
+        while (1);
+    }
+    ps.enableDefault();
+    
+    while(1){
+        float pressure = ps.readPressureMillibars();
+        float altitude = ps.pressureToAltitudeMeters(pressure);
+        float temperature = ps.readTemperatureC();
+  
+        // printf("p:%.2f\t mbar\ta:%.2f m\tt:%.2f deg C\r\n",pressure,altitude,temperature);
+        printf("pressure raw: %f\r\n", pressure);
+        printf("altitude raw: %f\r\n", altitude);
+        printf("temperature raw: %f\r\n", temperature);
+
+        printf("test");
+
+        ThisThread::sleep_for(5000ms);
+    }
+    
+}
+
+*/
+
 
 // Defines ///////////////////////////////////////////////////////////
 
@@ -14,7 +50,7 @@
 
 // Constructors //////////////////////////////////////////////////////
 
-LPS::LPS(I2C& p_i2c):_i2c(p_i2c)
+LPS25HB::LPS25HB(I2C& p_i2c):_i2c(p_i2c)
 {
     _device = device_auto;
   
@@ -26,7 +62,7 @@ LPS::LPS(I2C& p_i2c):_i2c(p_i2c)
 // Public Methods ////////////////////////////////////////////////////
 
 // sets or detects device type and slave address; returns bool indicating success
-bool LPS::init(deviceType device, uint8_t sa0)
+bool LPS25HB::init(deviceType device, uint8_t sa0)
 {
     if (!detectDeviceAndAddress(device, (sa0State)sa0))
         return false;
@@ -53,7 +89,7 @@ bool LPS::init(deviceType device, uint8_t sa0)
 }
 
 // turns on sensor and enables continuous output
-void LPS::enableDefault(void)
+void LPS25HB::enableDefault(void)
 {
     if (_device == device_25H)
     {
@@ -70,7 +106,7 @@ void LPS::enableDefault(void)
 }
 
 // writes register
-void LPS::writeReg(char reg, char value)
+void LPS25HB::writeReg(char reg, char value)
 {
     // if dummy register address, look up actual translated address (based on device type)
     if (reg < 0)
@@ -82,7 +118,7 @@ void LPS::writeReg(char reg, char value)
 }
 
 // reads register
-int8_t LPS::readReg(char reg)
+int8_t LPS25HB::readReg(char reg)
 {
     char value;
     // if dummy register address, look up actual translated address (based on device type)
@@ -97,19 +133,19 @@ int8_t LPS::readReg(char reg)
 }
 
 // reads pressure in millibars (mbar)/hectopascals (hPa)
-float LPS::readPressureMillibars(void)
+float LPS25HB::readPressureMillibars(void)
 {
     return (float)readPressureRaw() / 4096;
 }
 
 // reads pressure in inches of mercury (inHg)
-float LPS::readPressureInchesHg(void)
+float LPS25HB::readPressureInchesHg(void)
 {
     return (float)readPressureRaw() / 138706.5;
 }
 
 // reads pressure and returns raw 24-bit sensor output
-int32_t LPS::readPressureRaw(void)
+int32_t LPS25HB::readPressureRaw(void)
 {
     // assert MSB to enable register address auto-increment
   
@@ -123,19 +159,19 @@ int32_t LPS::readPressureRaw(void)
 }
 
 // reads temperature in degrees C
-float LPS::readTemperatureC(void)
+float LPS25HB::readTemperatureC(void)
 {
     return 42.5 + (float)readTemperatureRaw() / 480;
 }
 
 // reads temperature in degrees F
-float LPS::readTemperatureF(void)
+float LPS25HB::readTemperatureF(void)
 {
     return 108.5 + (float)readTemperatureRaw() / 480 * 1.8;
 }
 
 // reads temperature and returns raw 16-bit sensor output
-int16_t LPS::readTemperatureRaw(void)
+int16_t LPS25HB::readTemperatureRaw(void)
 {
     char command = TEMP_OUT_L | (1 << 7);
   
@@ -156,20 +192,20 @@ int16_t LPS::readTemperatureRaw(void)
 //  compensated for actual regional pressure; otherwise, it returns
 //  the pressure altitude above the standard pressure level of 1013.25
 //  mbar or 29.9213 inHg
-float LPS::pressureToAltitudeMeters(double pressure_mbar, double altimeter_setting_mbar)
+float LPS25HB::pressureToAltitudeMeters(double pressure_mbar, double altimeter_setting_mbar)
 {
     return (1 - pow(pressure_mbar / altimeter_setting_mbar, 0.190263)) * 44330.8;//pressure;
 }
 
 // converts pressure in inHg to altitude in feet; see notes above
-float LPS::pressureToAltitudeFeet(double pressure_inHg, double altimeter_setting_inHg)
+float LPS25HB::pressureToAltitudeFeet(double pressure_inHg, double altimeter_setting_inHg)
 {
     return (1 - pow(pressure_inHg / altimeter_setting_inHg, 0.190263)) * 145442;//pressure;
 }
 
 // Private Methods ///////////////////////////////////////////////////
 
-bool LPS::detectDeviceAndAddress(deviceType device, sa0State sa0)
+bool LPS25HB::detectDeviceAndAddress(deviceType device, sa0State sa0)
 {
     if (sa0 == sa0_auto || sa0 == sa0_high)
     {
@@ -185,7 +221,7 @@ bool LPS::detectDeviceAndAddress(deviceType device, sa0State sa0)
     return false;
 }
 
-bool LPS::detectDevice(deviceType device)
+bool LPS25HB::detectDevice(deviceType device)
 {
     uint8_t id = testWhoAmI(address);
   
@@ -203,7 +239,7 @@ bool LPS::detectDevice(deviceType device)
     return false;
 }
 
-int LPS::testWhoAmI(uint8_t address)
+int LPS25HB::testWhoAmI(uint8_t address)
 {
     char command = WHO_AM_I;
     char status = 0;

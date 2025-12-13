@@ -1,195 +1,111 @@
-/**
- ******************************************************************************
- * @file    LPS25HBSensor.h
- * @author  AST
- * @version V1.0.0
- * @date    7 September 2017
- * @brief   Abstract Class of an LPS25HB Pressure sensor.
- ******************************************************************************
- * @attention
- *
- * <h2><center>&copy; COPYRIGHT(c) 2017 STMicroelectronics</center></h2>
- *
- * Redistribution and use in source and binary forms, with or without modification,
- * are permitted provided that the following conditions are met:
- *   1. Redistributions of source code must retain the above copyright notice,
- *      this list of conditions and the following disclaimer.
- *   2. Redistributions in binary form must reproduce the above copyright notice,
- *      this list of conditions and the following disclaimer in the documentation
- *      and/or other materials provided with the distribution.
- *   3. Neither the name of STMicroelectronics nor the names of its contributors
- *      may be used to endorse or promote products derived from this software
- *      without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
- * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
- * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- ******************************************************************************
- */
+#ifndef LPS25HB_h
+#define LPS25HB_h
 
+#include "mbed.h" // for int8_t data type
 
-/* Prevent recursive inclusion -----------------------------------------------*/
-
-#ifndef __LPS25HBSensor_H__
-#define __LPS25HBSensor_H__
-
-
-/* Includes ------------------------------------------------------------------*/
-
-#include "Wire.h"
-#include "SPI.h"
-#include "LPS25HB_Driver.h"
-
-/* Typedefs ------------------------------------------------------------------*/
-typedef enum
-{
-  LPS25HB_STATUS_OK = 0,
-  LPS25HB_STATUS_ERROR,
-  LPS25HB_STATUS_TIMEOUT,
-  LPS25HB_STATUS_NOT_IMPLEMENTED
-} LPS25HBStatusTypeDef;
-
-
-/* Class Declaration ---------------------------------------------------------*/
-
-/**
- * Abstract class of an LPS25HB Pressure sensor.
- */
-class LPS25HBSensor
+class LPS25HB
 {
   public:
-    LPS25HBSensor                       (TwoWire *i2c, uint8_t address=LPS25HB_ADDRESS_HIGH);
-    LPS25HBSensor                       (SPIClass *spi, int cs_pin, uint32_t spi_speed=2000000);
-    LPS25HBStatusTypeDef begin          (void);
-    LPS25HBStatusTypeDef end            (void);
-    LPS25HBStatusTypeDef Enable         (void);
-    LPS25HBStatusTypeDef Disable        (void);
-    LPS25HBStatusTypeDef ReadID         (uint8_t *ht_id);
-    LPS25HBStatusTypeDef Reset          (void);
-    LPS25HBStatusTypeDef GetPressure    (float *pfData);
-    LPS25HBStatusTypeDef GetTemperature (float *pfData);
-	LPS25HBStatusTypeDef GetODR         (float *odr);
-	LPS25HBStatusTypeDef SetODR         (float odr);
-	LPS25HBStatusTypeDef ReadReg        (uint8_t reg, uint8_t *data);
-	LPS25HBStatusTypeDef WriteReg       (uint8_t reg, uint8_t data);
-	
-	/**
-     * @brief Utility function to read data.
-     * @param  pBuffer: pointer to data to be read.
-     * @param  RegisterAddr: specifies internal address register to be read.
-     * @param  NumByteToRead: number of bytes to be read.
-     * @retval 0 if ok, an error code otherwise.
-     */
-    uint8_t IO_Read(uint8_t* pBuffer, uint8_t RegisterAddr, uint16_t NumByteToRead)
+    enum deviceType { device_331AP, device_25H, device_auto };
+    enum sa0State { sa0_low, sa0_high, sa0_auto };
+
+    // register addresses
+    // Note: where register names differ between the register mapping table and
+    // the register descriptions in the datasheets, the names from the register
+    // descriptions are used here.
+    enum regAddr
     {
-      if (dev_spi) {
-        dev_spi->beginTransaction(SPISettings(spi_speed, MSBFIRST, SPI_MODE3));
+      REF_P_XL                = 0x08,
+      REF_P_L                 = 0x09,
+      REF_P_H                 = 0x0A,
+                              
+      WHO_AM_I                = 0x0F,
+                              
+      RES_CONF                = 0x10,
+                              
+      CTRL_REG1               = 0x20,
+      CTRL_REG2               = 0x21,
+      CTRL_REG3               = 0x22,
+      CTRL_REG_4               = 0x23, // 25H
+              
+      STATUS_REG              = 0x27,
+                            
+      PRESS_OUT_XL            = 0x28,
+      PRESS_OUT_L             = 0x29,
+      PRESS_OUT_H             = 0x2A,
 
-        digitalWrite(cs_pin, LOW);
-
-        /* Write Reg Address */
-        dev_spi->transfer(RegisterAddr | 0x80);
-        /* Read the data */
-        for (uint16_t i=0; i<NumByteToRead; i++) {
-          *(pBuffer+i) = dev_spi->transfer(0x00);
-        }
-         
-        digitalWrite(cs_pin, HIGH);
-
-        dev_spi->endTransaction();
-
-        return 0;
-      }
-
-      if(dev_i2c) {
-        dev_i2c->beginTransmission(((uint8_t)(((address) >> 1) & 0x7F)));
-        dev_i2c->write(RegisterAddr);
-        dev_i2c->endTransmission(false);
-
-        dev_i2c->requestFrom(((uint8_t)(((address) >> 1) & 0x7F)), (byte) NumByteToRead);
-
-        int i=0;
-        while (dev_i2c->available())
-        {
-          pBuffer[i] = dev_i2c->read();
-          i++;
-        }
-
-        return 0;
-      }
-
-      return 1;
-    }
+      TEMP_OUT_L              = 0x2B,
+      TEMP_OUT_H              = 0x2C,
+      
+      FIFO_CTRL_               = 0x2E, // 25H
+      FIFO_STATUS             = 0x2F, // 25H
+      
+      AMP_CTRL                = 0x30, // 331AP
+      
+      RPDS_L                  = 0x39, // 25H
+      RPDS_H                  = 0x3A, // 25H
+      
+      DELTA_PRESS_XL          = 0x3C, // 331AP
+      DELTA_PRESS_L           = 0x3D, // 331AP
+      DELTA_PRESS_H           = 0x3E, // 331AP
+      
+      
+      // dummy addresses for registers in different locations on different devices;
+      // the library translates these based on device type
+      // value with sign flipped is used as index into translated_regs array
     
-    /**
-     * @brief Utility function to write data.
-     * @param  pBuffer: pointer to data to be written.
-     * @param  RegisterAddr: specifies internal address register to be written.
-     * @param  NumByteToWrite: number of bytes to write.
-     * @retval 0 if ok, an error code otherwise.
-     */
-    uint8_t IO_Write(uint8_t* pBuffer, uint8_t RegisterAddr, uint16_t NumByteToWrite)
-    {
-      if (dev_spi) {
-        dev_spi->beginTransaction(SPISettings(spi_speed, MSBFIRST, SPI_MODE3));
+      INTERRUPT_CFG    = -1,
+      INT_SOURCE       = -2,
+      THS_P_L          = -3,
+      THS_P_H          = -4,
+      // update dummy_reg_count if registers are added here!
+      
+      
+      // device-specific register addresses
+      
+      LPS331AP_INTERRUPT_CFG  = 0x23,
+      LPS331AP_INT_SOURCE     = 0x24,
+      LPS331AP_THS_P_L        = 0x25,
+      LPS331AP_THS_P_H        = 0x26,
+      
+      LPS25H_INTERRUPT_CFG    = 0x24,
+      LPS25H_INT_SOURCE       = 0x25,
+      LPS25H_THS_P_L          = 0x30,
+      LPS25H_THS_P_H          = 0x31,
+    };
 
-        digitalWrite(cs_pin, LOW);
+    LPS25HB(I2C& p_i2c);
 
-        /* Write Reg Address */
-        dev_spi->transfer(RegisterAddr);
-        /* Write the data */
-        for (uint16_t i=0; i<NumByteToWrite; i++) {
-          dev_spi->transfer(pBuffer[i]);
-        }
+    bool init(deviceType device = device_auto,uint8_t sa0 = sa0_auto);
+    deviceType getDeviceType(void) { return _device; }
+    int8_t getAddress(void) { return address; }
 
-        digitalWrite(cs_pin, HIGH);
+    void enableDefault(void);
 
-        dev_spi->endTransaction();
+    void writeReg(char reg, char value);
+    int8_t readReg(char reg);
 
-        return 0;                    
-      }
+    float readPressureMillibars(void);
+    float readPressureInchesHg(void);
+    int32_t readPressureRaw(void);
+    float readTemperatureC(void);
+    float readTemperatureF(void);
+    int16_t readTemperatureRaw(void);
 
-      if (dev_i2c) {
-        dev_i2c->beginTransmission(((uint8_t)(((address) >> 1) & 0x7F)));
-
-        dev_i2c->write(RegisterAddr);
-        for (int i = 0 ; i < NumByteToWrite ; i++)
-          dev_i2c->write(pBuffer[i]);
-
-        dev_i2c->endTransmission(true);
-
-        return 0;
-      }
-
-      return 1;
-    }
+    static float pressureToAltitudeMeters(double pressure_mbar, double altimeter_setting_mbar = 1013.25);
+    static float pressureToAltitudeFeet(double pressure_inHg, double altimeter_setting_inHg = 29.9213);
 
   private:
-    /* Helper classes. */
-    TwoWire *dev_i2c;
-    SPIClass *dev_spi;
-
-	/* Configuration */
+    deviceType _device; // chip type (331AP or 25H)
+    I2C &_i2c;
     uint8_t address;
-    int cs_pin;
-    uint32_t spi_speed;
-};
+    
+    static const int dummy_reg_count = 4;
+    regAddr translated_regs[dummy_reg_count + 1]; // index 0 not used
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-uint8_t LPS25HB_IO_Write( void *handle, uint8_t WriteAddr, uint8_t *pBuffer, uint16_t nBytesToWrite );
-uint8_t LPS25HB_IO_Read( void *handle, uint8_t ReadAddr, uint8_t *pBuffer, uint16_t nBytesToRead );
-#ifdef __cplusplus
-}
-#endif
+    bool detectDeviceAndAddress(deviceType device, sa0State sa0);
+    bool detectDevice(deviceType device);
+    int testWhoAmI(uint8_t address);
+};
 
 #endif
