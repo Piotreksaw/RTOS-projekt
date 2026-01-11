@@ -58,7 +58,7 @@ int DHT11::readData(void)
     io.output();
     io = 0;
     do {
-    } while (chrono::duration_cast<chrono::milliseconds>(t.elapsed_time()).count() < 20 + t_tol_start);
+    } while (chrono::duration_cast<chrono::milliseconds>(t.elapsed_time()).count() < 30);
     io.input();
     io = 1;
     
@@ -84,7 +84,7 @@ int DHT11::readData(void)
     // Wainting for the end of the ready signal
     t.reset();
     do {
-        if (t.elapsed_time().count() > 100) {
+        if (t.elapsed_time().count() > 200) {
             t.reset();
             return WATCHDOG_ERR;
         }
@@ -164,7 +164,7 @@ void DHT11::neg_edge(void)
     t_pulse_us = t.elapsed_time().count();
 
     // Detecting 0 if the pulse width ranges around 25 us
-    if (25 - t_tol_pulse <= t_pulse_us && t_pulse_us <= 30 + t_tol_pulse) {
+    if (25 - t_tol_pulse <= t_pulse_us && t_pulse_us <= 40 + t_tol_pulse) {
         // Shifting the data buffer and not adding 1 (because this bit is zero)
         data = data << 1;
 
@@ -173,7 +173,7 @@ void DHT11::neg_edge(void)
     }
 
     // Detecting 1 if the pulse width ranges from 70 us
-    else if (70 - t_tol_pulse <= t_pulse_us && t_pulse_us <= 70 + t_tol_pulse) {
+    else if (70 - t_tol_pulse <= t_pulse_us && t_pulse_us <= 80 + t_tol_pulse) {
         // Shifting the data buffer and adding 1 (because this bit is one)
         data = data << 1;
         data++;
