@@ -1,29 +1,42 @@
 #include "mbed.h"
+#include "rtos.h"
 #include "DHT11.h"
 #include "LPS25HB.h"
 
-I2C i2c(I2C_SDA, I2C_SCL);   // SDA, SCL
+// ================== I2C + DEVICES ==================
+I2C i2c(I2C_SDA, I2C_SCL);
 #define SSD1306_ADDR 0x78
-#define SSD1306_LCDWIDTH 128
-#define SSD1306_LCDHEIGHT 64
 
-DHT11 d(PA_11);           // DHT11
+DHT11 d(PA_11);
 LPS25HB ps(i2c);
-Ticker tick;
-EventQueue queue;
 
-// ---------- SSD1306 low-level ----------
+// ================== RTOS ==================
+struct SensorData {
+    float lps_temp;
+    float pressure;
+    int   dht_temp;
+    int   humidity;
+    bool  dht_ok;
+};
+
+Thread sensors_thread(osPriorityNormal, 4096);
+Thread display_thread(osPriorityLow,    4096);
+
+Mutex i2c_mutex;
+Queue<SensorData, 4> sensor_queue;
+EventFlags flags;
+
+#define FLAG_NEW_DATA 0x01
+
+// ================== OLED LOW LEVEL ==================
 void oled_cmd(uint8_t cmd) {
-    char data[2];
-    data[0] = 0x00; // control: command
-    data[1] = cmd;
-    i2c.write(SSD1306_ADDR, data, 2);
+    char d[2] = {0x00, cmd};
+    i2c.write(SSD1306_ADDR, d, 2);
 }
-void oled_data(uint8_t d) {
-    char data[2];
-    data[0] = 0x40; // control: data
-    data[1] = d;
-    i2c.write(SSD1306_ADDR, data, 2);
+
+void oled_data(uint8_t data) {
+    char d[2] = {0x40, data};
+    i2c.write(SSD1306_ADDR, d, 2);
 }
 
 void oled_init() {
@@ -39,36 +52,23 @@ void oled_init() {
     oled_cmd(0x81); oled_cmd(0xCF);
     oled_cmd(0xD9); oled_cmd(0xF1);
     oled_cmd(0xDB); oled_cmd(0x40);
-    oled_cmd(0xA4); oled_cmd(0xA6);
+    oled_cmd(0xA4);
+    oled_cmd(0xA6);
     oled_cmd(0xAF);
 }
 
+void oled_set_pos(int page, int col) {
+    oled_cmd(0x21); oled_cmd(col); oled_cmd(127);
+    oled_cmd(0x22); oled_cmd(page); oled_cmd(7);
+}
+
 void oled_clear() {
-    oled_cmd(0x21); oled_cmd(0x00); oled_cmd(0x7F);
-    oled_cmd(0x22); oled_cmd(0x00); oled_cmd(0x07);
-
-    // czyszczenie ekranu
-    char buffer[17];
-    buffer[0] = 0x40;
-    for (int i = 1; i < 17; i++) buffer[i] = 0x00;
-    for (int i = 0; i < 64; i++) {
-        i2c.write(SSD1306_ADDR, buffer, 17);
-    }
+    oled_set_pos(0,0);
+    for(int i=0;i<1024;i++) oled_data(0x00);
 }
+struct Glyph { char ch; uint8_t d[5]; };
 
-// Set start page and column for subsequent DATA writes
-void oled_set_pos(int page, int column) {
-    if (column < 0) column = 0;
-    if (column > 127) column = 127;
-    if (page < 0) page = 0;
-    if (page > 7) page = 7;
-    oled_cmd(0x21); oled_cmd(column); oled_cmd(127); // column address from column..127
-    oled_cmd(0x22); oled_cmd(page); oled_cmd(7);    // page address from page..7
-}
-
-struct Glyph { char ch; uint8_t b[5]; };
-
-const Glyph font_map[] = {
+const Glyph font[] = {
     {' ', {0x00,0x00,0x00,0x00,0x00}},
 
     // --- digits ---
@@ -82,6 +82,35 @@ const Glyph font_map[] = {
     {'7', {0x01,0x71,0x09,0x05,0x03}},
     {'8', {0x36,0x49,0x49,0x49,0x36}},
     {'9', {0x06,0x49,0x49,0x29,0x1E}},
+
+    // --- lowercase alphabet ---
+    {'a', {0x20,0x54,0x54,0x54,0x78}},
+    {'b', {0x7F,0x48,0x44,0x44,0x38}},
+    {'c', {0x38,0x44,0x44,0x44,0x20}},
+    {'d', {0x38,0x44,0x44,0x48,0x7F}},
+    {'e', {0x38,0x54,0x54,0x54,0x18}},
+    {'f', {0x08,0x7E,0x09,0x01,0x02}},
+    {'g', {0x0C,0x52,0x52,0x52,0x3E}},
+    {'h', {0x7F,0x08,0x04,0x04,0x78}},
+    {'i', {0x00,0x44,0x7D,0x40,0x00}},
+    {'j', {0x20,0x40,0x44,0x3D,0x00}},
+    {'k', {0x7F,0x10,0x28,0x44,0x00}},
+    {'l', {0x00,0x41,0x7F,0x40,0x00}},
+    {'m', {0x7C,0x04,0x18,0x04,0x78}},
+    {'n', {0x7C,0x08,0x04,0x04,0x78}},
+    {'o', {0x38,0x44,0x44,0x44,0x38}},
+    {'p', {0x7C,0x14,0x14,0x14,0x08}},
+    {'q', {0x08,0x14,0x14,0x18,0x7C}},
+    {'r', {0x7C,0x08,0x04,0x04,0x08}},
+    {'s', {0x48,0x54,0x54,0x54,0x20}},
+    {'t', {0x04,0x3F,0x44,0x40,0x20}},
+    {'u', {0x3C,0x40,0x40,0x20,0x7C}},
+    {'v', {0x1C,0x20,0x40,0x20,0x1C}},
+    {'w', {0x3C,0x40,0x30,0x40,0x3C}},
+    {'x', {0x44,0x28,0x10,0x28,0x44}},
+    {'y', {0x0C,0x50,0x50,0x50,0x3C}},
+    {'z', {0x44,0x64,0x54,0x4C,0x44}},
+
 
     // --- uppercase alphabet ---
     {'A', {0x7E,0x11,0x11,0x11,0x7E}},
@@ -117,145 +146,111 @@ const Glyph font_map[] = {
     {'-', {0x08,0x08,0x08,0x08,0x08}},
     {'.', {0x00,0x60,0x60,0x00,0x00}},
 };
-const int FONT_MAP_SIZE = sizeof(font_map) / sizeof(Glyph);
 
-const uint8_t* get_glyph(char c) {
-    for (int i = 0; i < FONT_MAP_SIZE; i++) {
-        if (font_map[i].ch == c) return font_map[i].b;
-    }
-    return font_map[0].b; // space
+const uint8_t* glyph(char c){
+    for(auto &g:font) if(g.ch==c) return g.d;
+    return font[0].d;
 }
 
-
-void print_char(char c) {
-    const uint8_t* g = get_glyph(c);
-    for (int i = 0; i < 5; i++) oled_data(g[i]);
-    oled_data(0x00); // spacer
+void print_char(char c){
+    const uint8_t *g = glyph(c);
+    for(int i=0;i<5;i++) oled_data(g[i]);
+    oled_data(0x00);
 }
 
-void print_string(const char *s) {
-    while (*s) {
-        print_char(*s++);
-    }
+void print_string(const char *s){
+    while(*s) print_char(*s++);
 }
 
-void print_string_at(int page, int column, const char *s) {
-    oled_set_pos(page, column);
+void clear_area(int page,int col,int chars){
+    oled_set_pos(page,col);
+    for(int i=0;i<chars*6;i++) oled_data(0x00);
+}
+
+void print_string_at_clear(int page,int col,int chars,const char *s){
+    clear_area(page,col,chars);
+    oled_set_pos(page,col);
     print_string(s);
 }
 
-// Funkcja tworzy dwie warstwy (dolną i górną) i wypisuje je na top_page i top_page+1.
-void print_string_big_vert_at(int top_page, int column, const char *s) {
-    uint8_t low[128];
-    uint8_t high[128];
-    int idx = 0;
+// ================== STATIC LAYOUT ==================
+void draw_layout(){
+    oled_set_pos(0,0);  print_string("Temp LPS:");
+    oled_set_pos(0,64); print_string("Temp DHT:");
+    oled_set_pos(4,0);  print_string("Pressure:");
+    oled_set_pos(4,64); print_string("Humidity:");
+}
 
-    memset(low,  0x00, sizeof(low));
-    memset(high, 0x00, sizeof(high));
+// ================== THREADS ==================
+void sensors_task(){
+    static SensorData dta;
+    while(true){
+        i2c_mutex.lock();
+        dta.lps_temp = ps.readTemperatureC();
+        dta.pressure = ps.readPressureMillibars();
+        i2c_mutex.unlock();
 
-    while (*s && idx < 128) {
-        const uint8_t* g = get_glyph(*s++);
-        for (int col = 0; col < 5 && idx < 128; col++) {
-            uint8_t src = g[col];
-            uint16_t expanded = 0;
-            for (int b = 0; b < 7; b++) {
-                if (src & (1 << b)) {
-                    expanded |= (1 << (b * 2));
-                    expanded |= (1 << (b * 2 + 1));
-                }
+        if(d.readData()==DHT11::OK){
+            dta.dht_temp = d.readTemperature();
+            dta.humidity = d.readHumidity();
+            dta.dht_ok   = true;
+        } else {
+            dta.dht_ok = false;
+        }
+
+        sensor_queue.put(&dta);
+        flags.set(FLAG_NEW_DATA);
+        ThisThread::sleep_for(5s);
+    }
+}
+
+void display_task(){
+    SensorData *rx;
+    char buf[16];
+
+    while(true){
+        flags.wait_any(FLAG_NEW_DATA);
+
+        while(sensor_queue.try_get(&rx)){
+            i2c_mutex.lock();
+
+            snprintf(buf,16,"%.1f C",rx->lps_temp);
+            print_string_at_clear(2,0,10,buf);
+
+            snprintf(buf,16,"%.0f hPa",rx->pressure);
+            print_string_at_clear(6,0,10,buf);
+
+            if(rx->dht_ok){
+                snprintf(buf,16,"%d C",rx->dht_temp);
+                print_string_at_clear(2,64,8,buf);
+                snprintf(buf,16,"%d %%",rx->humidity);
+                print_string_at_clear(6,64,8,buf);
+            } else {
+                print_string_at_clear(2,64,8,"ERR");
+                print_string_at_clear(6,64,8,"ERR");
             }
-            low[idx] = expanded & 0xFF;
-            high[idx] = (expanded >> 8) & 0xFF;
-            idx++;
-        }
 
-        if (idx < 128) {
-            low[idx] = 0x00;
-            high[idx] = 0x00;
-            idx++;
+            i2c_mutex.unlock();
         }
     }
-
-    oled_set_pos(top_page, column);
-    for (int i = 0; i < idx; i++) oled_data(low[i]);
-
-    int upper_page = top_page + 1;
-    if (upper_page <= 7) {
-        oled_set_pos(upper_page, column);
-        for (int i = 0; i < idx; i++) oled_data(high[i]);
-    }
 }
 
-void update_display_with_readings(int temp, int hum) {
-    char tval[16];
-    char hval[16];
-
-    snprintf(tval, sizeof(tval), "%d C", temp);
-    snprintf(hval, sizeof(hval), "%d %%", hum);
-
-    oled_clear();
-
-    print_string_big_vert_at(0, 0, "TEMPERATURE:");
-    print_string_at(2, 0, tval);
-
-    print_string_big_vert_at(4, 0, "HUMIDITY:");
-
-    print_string_at(6, 0, hval);
-
-}
-
-void dht_handler() {
-    int s = d.readData();
-    if (s != DHT11::OK) {
-        print_string_at(2, 0, "ERR");
-        printf("DHT read error: %d\r\n", s);
-    } else {
-        int temp = d.readTemperature();
-        int hum  = d.readHumidity();
-        // printf("T:%d, H:%d\r\n", temp, hum);
-        update_display_with_readings(temp, hum);
-    }
-}
-
-void LPS25HB_handler(){
-
-        float pressure = ps.readPressureMillibars();
-        float altitude = ps.pressureToAltitudeMeters(pressure);
-        float temperature = ps.readTemperatureC();
-
-        printf("Odczyty z LPS25HB: \r\n");
-        printf("Temperatura: %.2f\r\n", temperature);
-        printf("Ciśnienie: %.2f\r\n \n", pressure);
-
-        update_display_with_readings(temperature, pressure);
-
-
-
-}
-
-void tick_cb() {
-    queue.call(dht_handler);
-    queue.call(LPS25HB_handler);
-}
-
-int main() {
+// ================== MAIN ==================
+int main(){
     i2c.frequency(400000);
+
     oled_init();
     oled_clear();
 
-    if (!ps.init()) {
-        printf("LPS25HB not detected!\r\n");
-        while (1);
+    if(!ps.init()){
+        while(1);
     }
-
     ps.enableDefault();
 
-    print_string_at(3, 0, "DZIEN DOBRY!");
-    ThisThread::sleep_for(1000ms);
-    oled_clear();
+    draw_layout();
 
-    tick.attach(&tick_cb, 5s);
-    queue.call(dht_handler);
-    queue.call(LPS25HB_handler);
-    queue.dispatch_forever();
+    sensors_thread.start(sensors_task);
+    display_thread.start(display_task);
+
+    ThisThread::sleep_for(osWaitForever);
 }
