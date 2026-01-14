@@ -260,7 +260,7 @@ int main(){
 
     // print_string_at(3, 0, "DZIEN DOBRY!");
     oled_draw_bitmap_128x64(saturn_logo);
-    ThisThread::sleep_for(1000ms);
+    ThisThread::sleep_for(4000ms);
     oled_clear();
     draw_layout();
 
