@@ -2,6 +2,7 @@
 #include "rtos.h"
 #include "DHT11.h"
 #include "LPS25HB.h"
+#include "logo.h"
 
 // ================== I2C + DEVICES ==================
 I2C i2c(I2C_SDA, I2C_SCL);
@@ -230,7 +231,17 @@ void display_task(){
                 print_string_at_clear(6,64,8,"ERR");
             }
 
+
             i2c_mutex.unlock();
+        }
+    }
+}
+
+void oled_draw_bitmap_128x64(const uint8_t *bmp) {
+    for (int page = 0; page < 8; page++) {
+        oled_set_pos(page, 0);
+        for (int col = 0; col < 128; col++) {
+            oled_data(bmp[page * 128 + col]);
         }
     }
 }
@@ -247,6 +258,10 @@ int main(){
     }
     ps.enableDefault();
 
+    // print_string_at(3, 0, "DZIEN DOBRY!");
+    oled_draw_bitmap_128x64(saturn_logo);
+    ThisThread::sleep_for(1000ms);
+    oled_clear();
     draw_layout();
 
     sensors_thread.start(sensors_task);
