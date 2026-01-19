@@ -4,14 +4,12 @@
 #include "LPS25HB.h"
 #include "logo.h"
 
-// ================== I2C + DEVICES ==================
-I2C i2c(I2C_SDA, I2C_SCL);
+I2C i2c(PB_9, PB_8);
 #define SSD1306_ADDR 0x78
 
-DHT11 d(PA_11);
+DHT11 d(D8);
 LPS25HB ps(i2c);
 
-// ================== RTOS ==================
 struct SensorData {
     float lps_temp;
     float pressure;
@@ -29,7 +27,6 @@ EventFlags flags;
 
 #define FLAG_NEW_DATA 0x01
 
-// ================== OLED LOW LEVEL ==================
 void oled_cmd(uint8_t cmd) {
     char d[2] = {0x00, cmd};
     i2c.write(SSD1306_ADDR, d, 2);
@@ -72,7 +69,6 @@ struct Glyph { char ch; uint8_t d[5]; };
 const Glyph font[] = {
     {' ', {0x00,0x00,0x00,0x00,0x00}},
 
-    // --- digits ---
     {'0', {0x3E,0x51,0x49,0x45,0x3E}},
     {'1', {0x00,0x42,0x7F,0x40,0x00}},
     {'2', {0x42,0x61,0x51,0x49,0x46}},
@@ -84,7 +80,6 @@ const Glyph font[] = {
     {'8', {0x36,0x49,0x49,0x49,0x36}},
     {'9', {0x06,0x49,0x49,0x29,0x1E}},
 
-    // --- lowercase alphabet ---
     {'a', {0x20,0x54,0x54,0x54,0x78}},
     {'b', {0x7F,0x48,0x44,0x44,0x38}},
     {'c', {0x38,0x44,0x44,0x44,0x20}},
@@ -113,7 +108,6 @@ const Glyph font[] = {
     {'z', {0x44,0x64,0x54,0x4C,0x44}},
 
 
-    // --- uppercase alphabet ---
     {'A', {0x7E,0x11,0x11,0x11,0x7E}},
     {'B', {0x7F,0x49,0x49,0x49,0x36}},
     {'C', {0x3E,0x41,0x41,0x41,0x22}},
@@ -141,7 +135,6 @@ const Glyph font[] = {
     {'Y', {0x03,0x04,0x78,0x04,0x03}},
     {'Z', {0x61,0x51,0x49,0x45,0x43}},
 
-    // --- symbols ---
     {':', {0x00,0x36,0x36,0x00,0x00}},
     {'%', {0x62,0x64,0x08,0x13,0x23}},
     {'-', {0x08,0x08,0x08,0x08,0x08}},
@@ -174,7 +167,6 @@ void print_string_at_clear(int page,int col,int chars,const char *s){
     print_string(s);
 }
 
-// ================== STATIC LAYOUT ==================
 void draw_layout(){
     oled_set_pos(0,0);  print_string("Temp LPS:");
     oled_set_pos(0,64); print_string("Temp DHT:");
@@ -182,7 +174,6 @@ void draw_layout(){
     oled_set_pos(4,64); print_string("Humidity:");
 }
 
-// ================== THREADS ==================
 void sensors_task(){
     static SensorData dta;
     while(true){
@@ -246,7 +237,6 @@ void oled_draw_bitmap_128x64(const uint8_t *bmp) {
     }
 }
 
-// ================== MAIN ==================
 int main(){
     i2c.frequency(400000);
 
@@ -258,7 +248,6 @@ int main(){
     }
     ps.enableDefault();
 
-    // print_string_at(3, 0, "DZIEN DOBRY!");
     oled_draw_bitmap_128x64(saturn_logo);
     ThisThread::sleep_for(4000ms);
     oled_clear();
